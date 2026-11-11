@@ -1,0 +1,58 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile, test, and package
+        shell: powershell
+        run: .\Build.ps1 -Test -Installer
+      - name: Checksums
+        shell: powershell
+        run: |
+          $files = @('dist/HeadsetButtonBridge-Setup-1.0.0.exe', 'dist/HeadsetButtonBridge.exe')
+          $files | ForEach-Object {
+            $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256
+            '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), (Split-Path $_ -Leaf)
+          } | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HeadsetButtonBridge-windows-x64
+          path: |
+            dist/HeadsetButtonBridge-Setup-1.0.0.exe
+            dist/HeadsetButtonBridge.exe
+            dist/HeadsetButtonBridge.exe.config
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: HeadsetButtonBridge-windows-x64
+          path: dist
+      - name: Publish release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create $env:RELEASE_TAG dist/HeadsetButtonBridge-Setup-1.0.0.exe dist/HeadsetButtonBridge.exe dist/HeadsetButtonBridge.exe.config dist/SHA256SUMS.txt --verify-tag --title "Headset Button Bridge $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md
