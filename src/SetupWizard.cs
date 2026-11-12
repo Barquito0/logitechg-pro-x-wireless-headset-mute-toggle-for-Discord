@@ -24,6 +24,9 @@ namespace HeadsetButtonBridge
         ComboBox devices, keys;
         CheckBox control, alt, shift, startup;
         HidDevice device;
+        PlaybackVolumeMonitor playbackVolume;
+        long latestVolumeChange = -100000, appliedVolumeChange = -100000;
+        bool captureHadVolumeChange;
         DeviceInfo selected;
         List<string> capturing;
         ReportDetector testDetector;
@@ -70,7 +73,7 @@ namespace HeadsetButtonBridge
             volumeButton.Size = new Size(270, 38); volumeButton.Click += delegate { BeginVolumeCheck(); };
             captureTimer.Tick += delegate { captureTimer.Stop(); EndCapture(); };
             volumeTimer.Tick += delegate { volumeTimer.Stop(); EndVolumeCheck(); };
-            candidateTimer.Tick += delegate { candidateTimer.Stop(); if (testDetector != null && testDetector.Advance(clock.ElapsedMilliseconds)) TestTrigger(); ScheduleTestCandidate(); };
+            candidateTimer.Tick += delegate { candidateTimer.Stop(); ApplyVolumeGuard(); if (testDetector != null && testDetector.Advance(clock.ElapsedMilliseconds)) TestTrigger(); ScheduleTestCandidate(); };
             sendTimer.Interval = 3000;
             sendTimer.Tick += delegate { sendTimer.Stop(); try { ReadShortcut(); KeySender.Send(settings); SetFeedback("Shortcut sent. If the target app was recording, stop recording there.", false); } catch (Exception ex) { SetFeedback(ex.Message, true); } };
             ShowPage(0);
@@ -130,7 +133,7 @@ namespace HeadsetButtonBridge
             else if (page == 2)
             {
                 heading.Text = "Make sure volume stays volume";
-                intro.Text = "Start the 8-second check, then turn the headset volume wheel up and down. Do not press mute during this check.";
+                intro.Text = "Start the 12-second check. Change volume with the headset wheel and your keyboard or Windows slider. Do not press mute during this check.";
                 volumeButton.Text = "Start volume check"; volumeButton.Enabled = true;
                 next.Enabled = false; trace.Clear(); volumePassed = false; buttonVerified = false;
                 stack.Controls.Add(volumeButton); stack.Controls.Add(feedback); stack.Controls.Add(trace);
@@ -186,6 +189,18 @@ namespace HeadsetButtonBridge
             if (selected == null) return false;
             try
             {
+                if (playbackVolume == null)
+                {
+                    playbackVolume = new PlaybackVolumeMonitor();
+                    playbackVolume.Changed += delegate(float level, bool muted)
+                    {
+                        System.Threading.Interlocked.Exchange(ref latestVolumeChange, clock.ElapsedMilliseconds);
+                        if (closing || IsDisposed || !IsHandleCreated) return;
+                        try { BeginInvoke(new Action(ApplyVolumeGuard)); } catch (InvalidOperationException) { }
+                    };
+                }
+                else playbackVolume.Refresh();
+                if (playbackVolume.EndpointCount == 0) throw new InvalidOperationException("Connect a playback device before calibrating.");
                 device = new HidDevice(selected);
                 device.Report += delegate(byte[] report)
                 {
@@ -210,13 +225,15 @@ namespace HeadsetButtonBridge
         void BeginCapture()
         {
             if (captures.Count >= 3) return;
-            capturing = new List<string>(); firstCaptureReport = true;
+            capturing = new List<string>(); firstCaptureReport = true; captureHadVolumeChange = false;
+            appliedVolumeChange = System.Threading.Interlocked.Read(ref latestVolumeChange);
             captureButton.Enabled = false;
             captureTimer.Interval = 8000; captureTimer.Start();
             SetFeedback("Listening for press " + (captures.Count + 1) + ". Press the headset mute button once now.", false);
         }
         void OnReport(byte[] report, long timestamp)
         {
+            ApplyVolumeGuard();
             string hex = BitConverter.ToString(report);
             if (page == 1 || page == 2)
             {
@@ -240,6 +257,7 @@ namespace HeadsetButtonBridge
         void EndCapture()
         {
             captureButton.Enabled = true;
+            if (captureHadVolumeChange) { capturing = null; SetFeedback("Windows volume changed during this sample. Wait one second, then capture only the mute button.", true); return; }
             if (capturing == null || capturing.Count == 0) { capturing = null; SetFeedback("No event arrived. Make sure the headset is on and try again. Some devices do not expose the button.", true); return; }
             captures.Add(capturing); capturing = null;
             if (captures.Count < 3) { captureButton.Text = "Capture press " + (captures.Count + 1) + " of 3"; SetFeedback("Sample " + captures.Count + " recorded. Wait one second, then capture the next press.", false); return; }
@@ -257,8 +275,23 @@ namespace HeadsetButtonBridge
             volumeRunning = true; volumePassed = false; buttonVerified = false; volumeFalseTriggers = 0; sawVolumeActivity = false;
             testDetector = new ReportDetector(settings, clock.ElapsedMilliseconds, 0);
             volumeButton.Enabled = false; next.Enabled = false;
-            volumeTimer.Interval = 8000; volumeTimer.Start();
-            SetFeedback("Checking for 8 seconds: turn volume up and down now. Leave the mute button alone.", false);
+            appliedVolumeChange = -100000; ApplyVolumeGuard();
+            volumeTimer.Interval = 12000; volumeTimer.Start();
+            SetFeedback("Checking for 12 seconds: use the headset wheel and keyboard volume control. Leave mute alone.", false);
+        }
+        void ApplyVolumeGuard()
+        {
+            if (closing) return;
+            long observed = System.Threading.Interlocked.Read(ref latestVolumeChange);
+            if (observed <= appliedVolumeChange) return;
+            appliedVolumeChange = observed;
+            if (page == 1 && capturing != null) captureHadVolumeChange = true;
+            if (page == 2 && testDetector != null)
+            {
+                if (volumeRunning) sawVolumeActivity = true;
+                testDetector.OtherControlChanged(observed);
+                candidateTimer.Stop();
+            }
         }
         void ScheduleTestCandidate()
         {
@@ -278,6 +311,7 @@ namespace HeadsetButtonBridge
         }
         void EndVolumeCheck()
         {
+            ApplyVolumeGuard();
             if (testDetector != null && testDetector.Advance(clock.ElapsedMilliseconds)) TestTrigger();
             volumeRunning = false; volumeButton.Enabled = true;
             if (!sawVolumeActivity || volumeFalseTriggers != 0)
@@ -312,7 +346,11 @@ namespace HeadsetButtonBridge
             feedback.ForeColor = error ? Color.FromArgb(163, 45, 42) : Color.FromArgb(45, 67, 128);
             feedback.AccessibleName = message;
         }
-        void CloseDevice() { if (device != null) { device.Dispose(); device = null; } }
+        void CloseDevice()
+        {
+            if (device != null) { device.Dispose(); device = null; }
+            if (playbackVolume != null) { playbackVolume.Dispose(); playbackVolume = null; }
+        }
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             closing = true;

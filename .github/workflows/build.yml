@@ -21,7 +21,7 @@ jobs:
       - name: Checksums
         shell: powershell
         run: |
-          $files = @('dist/HeadsetButtonBridge-Setup-1.0.0.exe', 'dist/HeadsetButtonBridge.exe')
+          $files = @('dist/HeadsetButtonBridge-Setup-1.0.1.exe', 'dist/HeadsetButtonBridge.exe')
           $files | ForEach-Object {
             $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256
             '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), (Split-Path $_ -Leaf)
@@ -30,7 +30,7 @@ jobs:
         with:
           name: HeadsetButtonBridge-windows-x64
           path: |
-            dist/HeadsetButtonBridge-Setup-1.0.0.exe
+            dist/HeadsetButtonBridge-Setup-1.0.1.exe
             dist/HeadsetButtonBridge.exe
             dist/HeadsetButtonBridge.exe.config
             dist/SHA256SUMS.txt
@@ -55,4 +55,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create $env:RELEASE_TAG dist/HeadsetButtonBridge-Setup-1.0.0.exe dist/HeadsetButtonBridge.exe dist/HeadsetButtonBridge.exe.config dist/SHA256SUMS.txt --verify-tag --title "Headset Button Bridge $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          gh release create $env:RELEASE_TAG dist/HeadsetButtonBridge-Setup-1.0.1.exe dist/HeadsetButtonBridge.exe dist/HeadsetButtonBridge.exe.config dist/SHA256SUMS.txt --verify-tag --title "Headset Button Bridge $env:RELEASE_TAG" --notes-file RELEASE_NOTES.md

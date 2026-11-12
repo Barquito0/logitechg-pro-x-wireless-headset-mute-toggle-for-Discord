@@ -2,13 +2,13 @@
 
 Make the **Logitech PRO X Wireless mute button** toggle Discord mute, deafen, or another app shortcut—even if you use a separate microphone.
 
-[Download the Windows installer](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/releases/latest/download/HeadsetButtonBridge-Setup-1.0.0.exe) · [Releases](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/releases) · [Report an issue](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/issues)
+[Download the Windows installer](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/releases/latest/download/HeadsetButtonBridge-Setup-1.0.1.exe) · [Releases](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/releases) · [Report an issue](https://github.com/Barquito0/logitechg-pro-x-wireless-headset-mute-toggle-for-Discord/issues)
 
 ## Install
 
-1. Download and run **HeadsetButtonBridge-Setup-1.0.0.exe**. It installs for your Windows account without administrator rights.
+1. Download and run **HeadsetButtonBridge-Setup-1.0.1.exe**. It installs for your Windows account without administrator rights. Existing users can install over v1.0.0 to fix keyboard-volume false triggers.
 2. Connect the receiver and turn on the headset.
-3. Follow the four-step wizard: detect the headset, record three mute presses, check the volume wheel and verify mute, then choose a shortcut.
+3. Follow the four-step wizard: detect the headset, record three mute presses, check headset and keyboard/Windows volume controls and verify mute, then choose a shortcut.
 4. Keep **Start quietly when I sign in to Windows** checked to run automatically after a restart and sign-in.
 5. In Discord's desktop app, open **Settings → System → Custom Keybinds → Add a Keybind**, choose **Toggle Mute**, click **Record Keybind**, and press the headset button. Stop recording and close settings before testing. Older Discord versions put Keybinds directly under Settings.
 
@@ -30,7 +30,7 @@ This release does not claim support for PRO X 2, wired PRO X, Bluetooth headsets
 Headset mute button → USB control report → calibrated filter → keyboard shortcut → Discord
 ```
 
-The app listens to one headset HID control interface using a blocking Windows read. It does not capture microphone audio. The prototype headset emits an empty consumer-control report on mute presses; volume actions send a different report followed by a similar empty release. Calibration learns the report and checks the volume filter before enabling the mapping.
+The app listens to one headset HID control interface using a blocking Windows read. It does not capture microphone audio. This headset emits an empty consumer-control report on mute presses. The headset wheel sends a different report followed by an empty release; keyboard and Windows volume changes can make the headset send only an empty report. The bridge subscribes to Windows playback-volume notifications to filter those events too. Calibration learns the report and checks the volume filter before enabling the mapping.
 
 Idle operation has **no repeating polling timer**. A one-shot timer runs briefly when a possible press arrives. Receiver connection changes and resume events trigger reconnection. Input queues, the calibration display, and error logs are bounded. There is no background web service, bundled browser, telemetry, network connection, update checker, or extra driver.
 
@@ -39,7 +39,7 @@ All running programs use some memory and processing time. This app aims for negl
 ## Limits to understand
 
 - **This toggles the target app; it does not synchronize physical mute state.** The headset button still mutes its own microphone. When using a separate mic, Discord's mute icon tells you whether Discord is transmitting it. Clicking mute in Discord separately can change the relationship between the two states.
-- **Wait about one second after adjusting volume before pressing mute.** Other control activity suppresses matching reports for 750 ms. A candidate is confirmed after about 150 ms; very rapid repeated presses are ignored.
+- **Wait about one second after adjusting volume before pressing mute.** Headset controls and Windows playback-volume notifications suppress matching reports for 750 ms. A candidate is confirmed after about 150 ms; very rapid repeated presses are ignored. A playback device and working volume notifications are required; the bridge waits rather than emitting shortcuts without that guard.
 - The empty report is not a unique mute-state bit. Calibration and the volume check reduce false triggers, but unusual firmware, power, or radio behavior could emit the same report. This is an experimental convenience mapping, not a privacy guarantee.
 - Shortcut keys can reach the foreground app and any other app bound to the same shortcut. F24 helps avoid conflicts. Hold-to-talk actions are not supported by a brief synthetic press.
 - If Ctrl, Alt, or Shift is already held down, the shortcut is skipped rather than sending an unexpected chord or releasing your held keys.

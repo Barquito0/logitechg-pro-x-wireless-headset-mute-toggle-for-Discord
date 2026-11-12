@@ -22,7 +22,7 @@ namespace HeadsetButtonBridge
         public void Feed(byte[] data, long now)
         {
             if (data.Length != pattern.Length || data[0] != pattern[0]) return;
-            if (!data.SequenceEqual(pattern)) { lastOther = now; DueAt = null; return; }
+            if (!data.SequenceEqual(pattern)) { OtherControlChanged(now); return; }
             if (now < armedAt || now - lastOther < guard || now - lastFire < debounce) return;
             if (!DueAt.HasValue) DueAt = now + confirm;
         }
@@ -32,6 +32,11 @@ namespace HeadsetButtonBridge
             lastFire = DueAt.Value;
             DueAt = null;
             return true;
+        }
+        public void OtherControlChanged(long now)
+        {
+            lastOther = Math.Max(lastOther, now);
+            DueAt = null;
         }
         public void Cancel() { DueAt = null; }
     }

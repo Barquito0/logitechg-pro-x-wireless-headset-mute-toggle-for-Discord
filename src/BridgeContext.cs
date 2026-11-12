@@ -20,6 +20,8 @@ namespace HeadsetButtonBridge
         readonly RegisteredWaitHandle setupWait, stopWait;
         BridgeSettings settings;
         HidDevice device;
+        PlaybackVolumeMonitor playbackVolume;
+        long latestVolumeChange = -100000, appliedVolumeChange = -100000;
         ReportDetector detector;
         SetupWizard wizard;
         bool paused, exiting;
@@ -45,7 +47,7 @@ namespace HeadsetButtonBridge
             menu.Items.Add("Exit", null, delegate { ExitThread(); });
             tray = new NotifyIcon { Icon = SystemIcons.Information, Text = "Headset Button Bridge", ContextMenuStrip = menu, Visible = true };
             tray.DoubleClick += delegate { OpenSetup(); };
-            confirmTimer.Tick += delegate { confirmTimer.Stop(); if (detector != null && detector.Advance(clock.ElapsedMilliseconds)) Fire(); ScheduleCandidate(); };
+            confirmTimer.Tick += delegate { confirmTimer.Stop(); ApplyVolumeGuard(); if (detector != null && detector.Advance(clock.ElapsedMilliseconds)) Fire(); ScheduleCandidate(); };
             reconnectTimer.Interval = 750;
             reconnectTimer.Tick += delegate { reconnectTimer.Stop(); Connect(); };
             window.DevicesChanged += delegate { reconnectTimer.Stop(); reconnectTimer.Start(); };
@@ -95,10 +97,24 @@ namespace HeadsetButtonBridge
             if (settings == null) { status.Text = "Calibration required"; return; }
             try
             {
+                if (playbackVolume == null)
+                {
+                    playbackVolume = new PlaybackVolumeMonitor();
+                    playbackVolume.Changed += delegate(float level, bool muted)
+                    {
+                        Interlocked.Exchange(ref latestVolumeChange, clock.ElapsedMilliseconds);
+                        Dispatch(ApplyVolumeGuard);
+                    };
+                    playbackVolume.EndpointsChanged += delegate { Dispatch(delegate { reconnectTimer.Stop(); reconnectTimer.Start(); }); };
+                }
+                else playbackVolume.Refresh();
+                if (playbackVolume.EndpointCount == 0) { status.Text = "Waiting for a playback device"; return; }
                 DeviceInfo info = HidDevice.Discover().FirstOrDefault(x => x.Matches(settings));
                 if (info == null) { status.Text = "Waiting for PRO X Wireless receiver"; return; }
                 int current = generation;
                 detector = new ReportDetector(settings, clock.ElapsedMilliseconds, 2000);
+                appliedVolumeChange = -100000;
+                ApplyVolumeGuard();
                 device = new HidDevice(info);
                 device.Report += delegate(byte[] data)
                 {
@@ -108,6 +124,7 @@ namespace HeadsetButtonBridge
                     {
                         Interlocked.Decrement(ref queued);
                         if (current != generation || detector == null || paused) return;
+                        ApplyVolumeGuard();
                         if (detector.Advance(timestamp)) Fire();
                         detector.Feed(data, timestamp);
                         ScheduleCandidate();
@@ -117,7 +134,15 @@ namespace HeadsetButtonBridge
                 device.Start();
                 UpdateStatus();
             }
-            catch (Exception ex) { status.Text = "Could not connect; reconnect receiver"; AppLog.Write("Connect: " + ex.Message); }
+            catch (Exception ex) { Disconnect(); status.Text = "Volume guard or headset unavailable; reconnect receiver"; AppLog.Write("Connect: " + ex.Message); }
+        }
+        void ApplyVolumeGuard()
+        {
+            long observed = Interlocked.Read(ref latestVolumeChange);
+            if (detector == null || observed <= appliedVolumeChange) return;
+            appliedVolumeChange = observed;
+            detector.OtherControlChanged(observed);
+            confirmTimer.Stop();
         }
         void ScheduleCandidate()
         {
@@ -144,6 +169,7 @@ namespace HeadsetButtonBridge
             setupWait.Unregister(null); stopWait.Unregister(null);
             if (wizard != null) wizard.Close();
             Disconnect();
+            if (playbackVolume != null) { playbackVolume.Dispose(); playbackVolume = null; }
             reconnectTimer.Stop(); reconnectTimer.Dispose(); confirmTimer.Dispose();
             tray.Visible = false; tray.Dispose();
             setupEvent.Dispose(); stopEvent.Dispose(); window.Dispose();

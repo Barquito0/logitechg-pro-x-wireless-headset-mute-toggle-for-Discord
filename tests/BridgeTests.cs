@@ -35,6 +35,27 @@ public static class BridgeTests
             if (d.Advance(14000)) count++;
             Check(count == 2, "recorded hardware sequence: 2 mute triggers, 0 volume triggers");
             Check(!d.DueAt.HasValue, "no timer scheduled after idle");
+            d = new ReportDetector(Settings(), 0, 0);
+            d.OtherControlChanged(1000); d.Feed(Empty, 1015);
+            Check(!d.Advance(2000), "keyboard volume notification suppresses empty headset report");
+            d.Feed(Empty, 3000); d.OtherControlChanged(3040);
+            Check(!d.Advance(4000), "volume callback arriving after HID report cancels candidate");
+            d.OtherControlChanged(5000); d.OtherControlChanged(5010); d.Feed(Empty, 5020);
+            Check(!d.Advance(6000), "duplicate playback callbacks cannot create a shortcut");
+            d.Feed(Empty, 7000);
+            Check(d.Advance(7150), "real mute press still works after keyboard volume guard expires");
+            d.OtherControlChanged(8000); d.OtherControlChanged(7900); d.Feed(Empty, 8700);
+            Check(!d.Advance(9000), "late queued callback cannot shorten the suppression window");
+            // Windows-volume regression captured from the actual headset:
+            // Core Audio at 173276 ms, empty HID at 173341 ms; another volume
+            // change at 174285 ms, empty HID at 174339 ms.
+            d = new ReportDetector(Settings(), 0, 0);
+            d.OtherControlChanged(0); d.Feed(Empty, 65);
+            bool keyboardFalseTrigger = d.Advance(1009);
+            d.OtherControlChanged(1009); d.Feed(Empty, 1063);
+            keyboardFalseTrigger |= d.Advance(2000);
+            d.Feed(Empty, 3000);
+            Check(!keyboardFalseTrigger && d.Advance(3150), "captured Windows-volume sequence is filtered while next mute is accepted");
             List<List<string>> captures = new List<List<string>> { new List<string> { "01-00" }, new List<string> { "01-00" }, new List<string> { "01-00" } };
             Check(Calibration.ChoosePattern(captures) == "01-00", "three matching calibration samples accepted");
             captures[2][0] = "01-01";

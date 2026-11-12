@@ -1,4 +1,4 @@
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppName "Headset Button Bridge"
 [Setup]
 AppId={{52E9D6A8-E41D-4D39-A0BB-0BAF4B23EA6C}

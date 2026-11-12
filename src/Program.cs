@@ -7,8 +7,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("Headset Button Bridge")]
 [assembly: AssemblyDescription("Calibrate a PRO X Wireless headset button and turn its events into a shortcut.")]
 [assembly: AssemblyCompany("Barquito0")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace HeadsetButtonBridge
 {

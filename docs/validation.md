@@ -1,4 +1,24 @@
-# Validation for v1.0.0
+# Validation
+
+## v1.0.1 Windows-volume regression
+
+The original filter missed empty headset reports caused by keyboard or Windows
+volume changes. A read-only diagnostic captured Windows playback-volume notifications
+followed by an identical empty HID report after 54-65 ms. This was reproduced with a
+2-percentage-point software volume adjustment, followed by restoring the original
+volume. No keyboard or microphone audio was recorded.
+
+The updated app subscribes to Core Audio volume events and cancels or suppresses
+mute candidates around them. A running-app integration check observed zero F24
+events during two software volume pulses (four volume changes and four corresponding
+empty headset reports). The automated suite now has 28 checks, including the captured
+Windows-volume regression, callback/HID ordering, and the next legitimate mute press.
+Existing calibration and startup preferences were retained during upgrade.
+
+The original v1.0.0 validation below did not exercise keyboard or Windows volume
+changes and therefore did not catch this bug.
+
+## Original validation
 
 Tested November 11, 2026 on one Windows x64 PC with the original Logitech PRO X
 Wireless USB receiver (`046D:0ABA`) and a separate Yeti selected in Discord.
